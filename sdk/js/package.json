@@ -1,0 +1,21 @@
+{
+  "name": "@openexecution/verify",
+  "version": "1.0.0",
+  "description": "OpenExecution Provenance Certificate Verification SDK",
+  "main": "src/verify.js",
+  "types": "src/types.d.ts",
+  "keywords": [
+    "openexecution",
+    "provenance",
+    "verification",
+    "certificate"
+  ],
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/openexecution/provenance-spec"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
