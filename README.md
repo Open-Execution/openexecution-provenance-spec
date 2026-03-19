@@ -20,9 +20,9 @@ The EU AI Act Phase 2 is approaching. The first AI agent incidents are reaching 
 
 | Layer | Function | Mechanism |
 |-------|----------|-----------|
-| **L1 -- Behavior Recording** | Record every agent action | Hash-linked chain events with canonical JSON serialization |
-| **L2 -- Tamper-Proof Causality** | Guarantee no record was altered | SHA-256 hash chain -- one changed byte breaks the entire chain |
-| **L3 -- Independent Accountability** | Enable third-party verification | Ed25519 signed certificates -- anyone verifies with the public key |
+| **L1 -- Behavior Recording** | Record every agent action | Hash-linked chain events with JCS canonicalization (RFC 8785) |
+| **L2 -- Tamper-Proof Causality** | Guarantee no record was altered | Pluggable hash chain (SHA-256/384/512, SHA3-256/384/512) -- one changed byte breaks the entire chain |
+| **L3 -- Independent Accountability** | Enable third-party verification | Asymmetric signed certificates (Ed25519, Ed448, ECDSA) -- anyone verifies with the public key |
 
 Every meaningful interaction -- from asking and answering questions to building projects, reviewing code, and resolving disputes -- is recorded as a hash-linked chain of events. Event payloads are hashed using canonical JSON serialization (deterministic key ordering) to prevent false-positive tampering detection.
 
@@ -31,10 +31,10 @@ When an execution chain completes, the platform issues a **Provenance Certificat
 ### Key Concepts
 
 - **Execution Chain**: A hash-linked sequence of events tracing the complete behavioral record of a collaboration lifecycle (question resolution, project build, code review, ownership transfer, or dispute resolution). This is the behavioral ledger -- not a debug log.
-- **Chain Events**: Atomic, tamper-evident records within a chain. Each event is cryptographically linked to its predecessor via SHA-256, forming an append-only evidence trail.
-- **Hash Chain (L2 -- Tamper-Proof Causality)**: SHA-256 hash linkage from genesis through every event. One changed byte breaks the entire chain -- making unauthorized alterations immediately detectable.
-- **Canonical JSON**: All event payloads are serialized using a deterministic `canonicalize()` function that recursively sorts object keys before hashing. This prevents false-positive tampering detection caused by JSONB key reordering in PostgreSQL. Each chain event stores both the raw payload and a `payload_canonical_hash` for independent verification.
-- **Ed25519 Signatures (L3 -- Independent Accountability)**: Provenance certificates are signed with Ed25519 asymmetric keys (RFC 8032). The platform holds the private key; the public key is published at a well-known API endpoint. Anyone verifies with the public key -- no platform cooperation required. This satisfies eIDAS "advanced electronic signature" requirements and China's Electronic Signature Law (Article 13).
+- **Chain Events**: Atomic, tamper-evident records within a chain. Each event is cryptographically linked to its predecessor via configurable hash algorithms, forming an append-only evidence trail.
+- **Hash Chain (L2 -- Tamper-Proof Causality)**: Cryptographic hash linkage from genesis through every event. Six hash algorithms supported (SHA-256 through SHA3-512). One changed byte breaks the entire chain -- making unauthorized alterations immediately detectable.
+- **Canonical JSON (RFC 8785)**: All event payloads are serialized using JCS (JSON Canonicalization Scheme) before hashing. This prevents false-positive tampering detection caused by JSONB key reordering in PostgreSQL. Each chain event stores both the raw payload and a `payload_canonical_hash` for independent verification.
+- **Asymmetric Signatures (L3 -- Independent Accountability)**: Provenance certificates are signed with asymmetric keys (Ed25519 default; Ed448, ECDSA-P256/P384/P521 available). The platform holds the private key; the public key is published at a well-known API endpoint. Anyone verifies with the public key -- no platform cooperation required. This satisfies eIDAS "advanced electronic signature" requirements and China's Electronic Signature Law (Article 13).
 - **Provenance Certificate**: A signed, self-contained attestation issued when a chain is resolved and certified. Certificates carry an Ed25519 signature and a public key fingerprint. This is court-ready evidence, not an internal log entry.
 - **Verification**: A step-by-step protocol for validating certificate signatures (Ed25519 public key verification), chain hashes, and event integrity. Any third party can verify independently -- auditors, courts, counterparties, regulators.
 
@@ -50,39 +50,50 @@ When an execution chain completes, the platform issues a **Provenance Certificat
 
 ## Cryptographic Foundations
 
+### Pluggable Algorithm Selection
+
+Each execution chain independently selects its hash algorithm, signature algorithm, and canonicalization method at creation time. Algorithms are locked per-chain -- ensuring consistent verification even as platform defaults evolve.
+
+| Category | Supported Algorithms | Standards |
+|----------|---------------------|-----------|
+| **Hash** | SHA-256, SHA-384, SHA-512, SHA3-256, SHA3-384, SHA3-512 | FIPS 180-4, FIPS 202 |
+| **Signature** | Ed25519, Ed448, ECDSA-P256, ECDSA-P384, ECDSA-P521 | RFC 8032, FIPS 186-5 |
+| **Canonicalization** | JCS (JSON Canonicalization Scheme) | RFC 8785 |
+
+Default: SHA-256 + Ed25519 + JCS (backward-compatible).
+
 ### Hash Chain Integrity
 
-Chain events are linked via SHA-256 hashes. Each event's hash incorporates the
+Chain events are linked via cryptographic hashes. Each event's hash incorporates the
 previous event's hash, the event payload, and metadata, forming an append-only,
 tamper-evident log.
 
-**Canonical JSON serialization**: All payloads are serialized using a `canonicalize()`
-function that recursively sorts object keys before computing hashes. This is critical
-because PostgreSQL's JSONB storage may reorder keys when reading data back. Without
-canonicalization, a legitimate chain could fail integrity verification due to
-serialization mismatch -- a false positive that would destroy system credibility.
-Each `chain_events` row stores a `payload_canonical_hash` column for independent
-payload verification.
+**Canonical JSON serialization (RFC 8785)**: All payloads are serialized using JCS
+canonicalization before computing hashes. This is critical because PostgreSQL's JSONB
+storage may reorder keys when reading data back. Without canonicalization, a legitimate
+chain could fail integrity verification due to serialization mismatch -- a false positive
+that would destroy system credibility. Each `chain_events` row stores a
+`payload_canonical_hash` column for independent payload verification.
 
-### Ed25519 Digital Signatures
+### Asymmetric Digital Signatures
 
-Provenance certificates are signed with **Ed25519 asymmetric keys** (RFC 8032).
-This replaced the earlier HMAC-SHA256 symmetric scheme and provides:
+Provenance certificates are signed with asymmetric keys (Ed25519 by default, with
+Ed448, ECDSA-P256/P384/P521 available). This provides:
 
 - **Non-repudiation**: The private key is held exclusively by the platform. Unlike
-  HMAC where the signing key and verification key are identical, Ed25519 allows
-  anyone to verify using only the public key. Platform logs lie. Cryptography doesn't.
+  HMAC where the signing key and verification key are identical, asymmetric signatures
+  allow anyone to verify using only the public key. Platform logs lie. Cryptography doesn't.
 - **Third-party verifiability**: Auditors, courts, regulators, and counterparties can verify
   certificates without any cooperation from the platform. This is the key distinction
   from observability tools -- verification is independent, not operator-granted.
-- **Legal admissibility**: Ed25519 satisfies eIDAS "advanced electronic signature"
-  requirements and is compatible with China's Electronic Signature Law (Article 13).
+- **Legal admissibility**: Ed25519/ECDSA satisfy eIDAS "advanced electronic signature"
+  requirements and are compatible with China's Electronic Signature Law (Article 13).
   Certificates constitute court-ready evidence in jurisdictions recognizing advanced
   electronic signatures.
 - **Independent key custody**: The platform never holds your proof. Key custody can be
   customer-controlled or HSM-backed, requiring zero platform trust.
 
-The platform's Ed25519 public key is available at:
+The platform's public key is available at:
 
 ```
 GET /api/v1/provenance/public-key
@@ -168,15 +179,37 @@ You can embed a provenance badge in your project documentation to link to the ve
 
 See [examples/embed-badge.md](examples/embed-badge.md) for detailed instructions.
 
+## Attestation Sources
+
+Every chain event carries an attestation source indicating how the action was observed:
+
+| Source | Evidence Level | Mechanism |
+|--------|---------------|-----------|
+| `platform_verified` | Verified | Cryptographically signed platform webhooks (e.g., GitHub HMAC-SHA256) |
+| `gateway_observed` | Definitive | Direct interception at AI gateway / MCP proxy layer |
+| `agent_reported` | Probable | Agent self-reports its own actions |
+| `cross_verified` | Verified | Both agent report and platform webhook corroborate the same action |
+
+Confidence tiers:
+- **Definitive**: MCP proxy interception, gateway observation (OpenClaw) — the platform directly observes the action
+- **Verified**: Platform webhooks with signature verification, bot-detection heuristics
+- **Probable**: Agent self-report, heuristic-only detection
+
 ## Architecture: One Core Engine, Unlimited Platform Adapters
 
 The OpenExecution provenance system is domain-agnostic by design. The core engine -- hash chains, certificates, verification -- binds to no specific platform. Platform adapters connect the core engine to specific environments:
 
-- **GitHub adapter** -- BUILT
-- **Vercel adapter** -- BUILT
-- Any new platform adapter can be built in 1-2 days
+| Adapter | Status | Attestation | Mechanism |
+|---------|--------|-------------|-----------|
+| **GitHub** | LIVE | `platform_verified` | Webhook (HMAC-SHA256) + bot detection |
+| **Vercel** | LIVE | `platform_verified` | Webhook (SHA1 signature) |
+| **Figma** | LIVE | `platform_verified` | Webhook (HMAC-SHA256) |
+| **Google Docs** | LIVE | `platform_verified` | Webhook (token verification) |
+| **Notion** | LIVE | `platform_verified` | Webhook (signature verification) |
+| **OpenClaw** | LIVE | `gateway_observed` | AI gateway interception (definitive) |
+| **MCP Proxy** | LIVE | `gateway_observed` | Direct tool-call interception (definitive) |
 
-This means OpenExecution provenance can follow agent actions across any platform where agents operate, providing a unified behavioral ledger regardless of where the work happens.
+Any new platform adapter can be built in 1-2 days. OpenExecution provenance follows agent actions across any platform where agents operate.
 
 ## Cryptographic Compliance
 
@@ -201,6 +234,14 @@ For security policy and vulnerability reporting, see [SECURITY.md](SECURITY.md).
 ## Issuance Rights
 
 This specification is open for implementation, but certificate issuance, liability ledger writes, and adjudication authority are exclusively reserved by the OpenExecution platform. See [NOTICE.md](NOTICE.md) for the complete issuance rights notice.
+
+## References
+
+This specification implements the architecture described in:
+
+- Li, A. (2026). *AEGIS: Agent Execution Governance and Integrity Standard — A Survey and Reference Architecture for AI Agent Action Accountability.* The three-layer cryptographic protocol (L1 Action Recording → L2 Hash-Chained Verification → L3 Ed25519 Independent Accountability) is the theoretical foundation of this specification.
+
+- Li, A. (2026). *Transformation Risk Management: A Governance Framework for AI-Driven Code Transformation.* Principle 1 (Behavioral Provenance) defines the requirements that this specification satisfies for AI code transformation audit trails.
 
 ## License
 
