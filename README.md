@@ -239,7 +239,9 @@ This specification is open for implementation, but certificate issuance, liabili
 
 This specification implements the architecture described in:
 
-- Li, A. (2026). *AEGIS: Agent Execution Governance and Integrity Standard — A Survey and Reference Architecture for AI Agent Action Accountability.* The three-layer cryptographic protocol (L1 Action Recording → L2 Hash-Chained Verification → L3 Ed25519 Independent Accountability) is the theoretical foundation of this specification.
+- Li, A. (2026). *AEGIS: Agent Execution Governance and Integrity Standard — A Survey and Reference Architecture for AI Agent Action Accountability.* Zenodo. [doi:10.5281/zenodo.18955103](https://doi.org/10.5281/zenodo.18955103). The three-layer cryptographic protocol (L1 Action Recording → L2 Hash-Chained Verification → L3 Independent Accountability) is the theoretical foundation of this specification.
+
+- Li, A. (2026). *LLM Exposure Monitoring: Platform Openness, Recording Depth, and the Case for an Open Standard.* Zenodo. [doi:10.5281/zenodo.19112060](https://doi.org/10.5281/zenodo.19112060). Systematic analysis of platform recording capabilities and the evidence basis for the attestation source model.
 
 - Li, A. (2026). *Transformation Risk Management: A Governance Framework for AI-Driven Code Transformation.* Principle 1 (Behavioral Provenance) defines the requirements that this specification satisfies for AI code transformation audit trails.
 
