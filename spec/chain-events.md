@@ -1,12 +1,12 @@
 # OpenExecution Chain Events Specification
 
-**Version:** 1.0.0
+**Version:** 2.0.0
 **Status:** Active
-**Last Updated:** 2026-02-14
+**Last Updated:** 2026-03-20
 
 ## 1. Overview
 
-Chain events are the atomic units of the OpenExecution behavioral ledger. Each event records a single agent action or occurrence within a collaboration, cryptographically linked to the preceding event via a SHA-256 hash chain (L2 -- Tamper-Proof Causality). Together, the ordered sequence of events forms a tamper-evident evidence trail -- not an internal debug log, but an independent, append-only record where one changed byte breaks the entire chain.
+Chain events are the atomic units of the OpenExecution behavioral ledger. Each event records a single action observed through a platform adapter, cryptographically linked to the preceding event via a hash chain (L2 -- Tamper-Proof Causality). Together, the ordered sequence of events forms a tamper-evident evidence trail -- not an internal debug log, but an independent, append-only record where one changed byte breaks the entire chain.
 
 Unlike platform observability tools that store plain database records editable by the operator, chain events are cryptographically bound to their predecessors. Once recorded, they cannot be altered, reordered, or removed without detection by any verifying party.
 
@@ -18,272 +18,237 @@ Every chain event contains the following fields:
 |-------|------|-------------|
 | `id` | UUID | Unique event identifier. |
 | `chain_id` | UUID | The execution chain this event belongs to. |
-| `seq` | INTEGER | Sequence number within the chain (0-indexed). Must be unique per chain. |
+| `seq` | INTEGER | Sequence number within the chain (**1-indexed**). Must be unique per chain. |
 | `event_type` | VARCHAR(64) | The type of event (see taxonomy below). |
-| `agent_id` | UUID \| null | The agent who performed the action, or null for system events. |
+| `actor_id` | VARCHAR(512) \| null | The platform-native identity who performed the action (e.g., GitHub username, Notion user ID). Null for system events. |
+| `actor_type` | VARCHAR(64) \| null | The type of actor: `human`, `bot`, `app`, `service`, or `unknown`. |
 | `sentiment` | VARCHAR(10) | The sentiment classification: `positive`, `negative`, or `neutral`. |
 | `is_liability_event` | BOOLEAN | Whether this event contributes to liability scoring. |
 | `payload` | JSONB | Event-specific data. Structure varies by event type. |
-| `prev_hash` | VARCHAR(64) | Hash of the previous event (or genesis hash for seq=0). |
-| `event_hash` | VARCHAR(64) | SHA-256 hash of this event's canonical data. |
+| `prev_hash` | VARCHAR(128) | Hash of the previous event (or genesis hash for seq=1). |
+| `event_hash` | VARCHAR(128) | Hash of this event's canonical data. |
+| `payload_canonical_hash` | VARCHAR(128) | Independent hash of the JCS-canonicalized payload for payload-only verification. |
+| `attestation_source` | VARCHAR(20) | How the action was observed (see Section 4). |
+| `ai_tool` | VARCHAR(32) \| null | Detected AI tool (e.g., `github_copilot`, `claude_code`, `cursor`). |
+| `ai_confidence` | VARCHAR(16) \| null | AI detection confidence: `definitive`, `verified`, or `probable`. |
+| `correlation_id` | UUID \| null | Cross-stream correlation pointer to a related event from a different attestation source. |
 | `created_at` | TIMESTAMPTZ | When the event was recorded. |
 
 ### 2.1 Schema Definition
 
 ```sql
-CREATE TABLE IF NOT EXISTS chain_events (
+CREATE TABLE chain_events (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  chain_id UUID NOT NULL REFERENCES execution_chains(id) ON DELETE CASCADE,
+  chain_id UUID NOT NULL REFERENCES execution_chains(id) ON DELETE RESTRICT,
   seq INTEGER NOT NULL,
   event_type VARCHAR(64) NOT NULL,
-  agent_id UUID REFERENCES agents(id),
+  actor_id VARCHAR(512),
+  actor_type VARCHAR(64),
   sentiment VARCHAR(10) DEFAULT 'neutral'
     CHECK (sentiment IN ('positive', 'negative', 'neutral')),
   is_liability_event BOOLEAN DEFAULT false,
   payload JSONB DEFAULT '{}',
-  prev_hash VARCHAR(64),
-  event_hash VARCHAR(64),
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  prev_hash VARCHAR(128),
+  event_hash VARCHAR(128),
+  payload_canonical_hash VARCHAR(128),
+  attestation_source VARCHAR(20) NOT NULL DEFAULT 'platform_verified'
+    CHECK (attestation_source IN (
+      'platform_verified', 'agent_reported', 'cross_verified', 'gateway_observed'
+    )),
+  ai_tool VARCHAR(32),
+  ai_confidence VARCHAR(16),
+  correlation_id UUID REFERENCES chain_events(id),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
   UNIQUE(chain_id, seq)
 );
 ```
 
-## 3. Event Types by Chain Type
+**Note:** The foreign key on `chain_id` uses `ON DELETE RESTRICT` (not CASCADE) to prevent accidental chain deletion while events exist.
 
-### 3.1 Question Resolution Events
+## 3. Event Types by Adapter
 
-| Event Type | Description | Typical Sentiment |
-|-----------|-------------|-------------------|
-| `question_posted` | A question was posted to the platform. | neutral |
-| `answer_posted` | An answer was submitted for the question. | positive |
-| `answer_accepted` | The question author accepted an answer. | positive |
-| `vote_cast` | A vote (up or down) was cast on the question or an answer. | positive or negative |
-| `comment_added` | A comment was added to the question or an answer. | neutral |
+Event types are platform-specific. Each adapter defines its own event vocabulary.
 
-### 3.2 Project Build Events
+### 3.1 GitHub Events
 
 | Event Type | Description | Typical Sentiment |
 |-----------|-------------|-------------------|
-| `pr_created` | A pull request was created. | neutral |
-| `pr_approved` | A pull request was approved. | positive |
-| `pr_rejected` | A pull request was rejected. | negative |
+| `code_pushed` | Code was pushed to a branch. | neutral |
+| `branch_created` | A new branch was created. | neutral |
+| `tag_created` | A new tag was created. | neutral |
+| `pr_opened` | A pull request was opened. | neutral |
+| `pr_closed` | A pull request was closed without merge. | negative |
 | `pr_merged` | A pull request was merged. | positive |
-| `comment_added` | A review comment was added. | neutral |
+| `pr_review_submitted` | A pull request review was submitted. | neutral |
+| `pr_review_commented` | A review comment was posted. | neutral |
+| `issue_opened` | An issue was opened. | neutral |
+| `issue_closed` | An issue was closed. | positive |
+| `issue_reopened` | An issue was reopened. | negative |
+| `issue_commented` | A comment was added to an issue. | neutral |
+| `workflow_run_completed` | A CI/CD workflow run completed. | neutral |
+| `check_run_completed` | A check run completed. | neutral |
+| `deployment_created` | A deployment was created. | neutral |
+| `deployment_status` | A deployment status changed. | neutral |
+| `release_published` | A release was published. | positive |
+| `security_advisory` | A security advisory was published. | negative |
+| `repo_created` | A repository was created. | neutral |
 
-### 3.3 Code Review Events
-
-| Event Type | Description | Typical Sentiment |
-|-----------|-------------|-------------------|
-| `pr_created` | A pull request was submitted for review. | neutral |
-| `comment_added` | A review comment was posted. | neutral |
-| `pr_approved` | The reviewer approved the pull request. | positive |
-| `pr_rejected` | The reviewer rejected the pull request. | negative |
-
-### 3.4 Ownership Transfer Events
-
-| Event Type | Description | Typical Sentiment |
-|-----------|-------------|-------------------|
-| `transfer_initiated` | An ownership transfer was initiated. | neutral |
-| `transfer_accepted` | The transfer was accepted by the receiving agent. | positive |
-| `transfer_rejected` | The transfer was rejected by the receiving agent. | negative |
-
-### 3.5 Dispute Resolution Events
+### 3.2 Vercel Events
 
 | Event Type | Description | Typical Sentiment |
 |-----------|-------------|-------------------|
-| `report_created` | A content report or dispute was filed. | negative |
-| `comment_added` | A comment was added during investigation. | neutral |
-| `decision_challenged` | The initial decision was challenged. | negative |
-| `report_resolved` | The report was resolved (action taken). | positive |
-| `report_dismissed` | The report was dismissed (no action taken). | neutral |
+| `deploy_triggered` | A deployment was triggered. | neutral |
+| `build_started` | A build started. | neutral |
+| `build_succeeded` | A build succeeded. | positive |
+| `build_failed` | A build failed. | negative |
+| `deploy_promoted` | A deployment was promoted. | positive |
+| `domain_configured` | A domain was configured. | neutral |
 
-## 4. Sentiment Values
+### 3.3 Figma Events
 
-Each event carries a sentiment classification that indicates the nature of the action:
+| Event Type | Description | Typical Sentiment |
+|-----------|-------------|-------------------|
+| `file_updated` | A design file was updated. | neutral |
+| `file_commented` | A comment was added to a file. | neutral |
+| `component_created` | A component was created. | positive |
+| `version_published` | A version was published. | positive |
+| `library_published` | A library was published. | positive |
+
+### 3.4 Notion Events
+
+| Event Type | Description | Typical Sentiment |
+|-----------|-------------|-------------------|
+| `page_created` | A page was created. | neutral |
+| `page_updated` | A page was updated. | neutral |
+| `page_archived` | A page was archived. | neutral |
+| `database_entry_created` | A database entry was created. | neutral |
+| `database_entry_updated` | A database entry was updated. | neutral |
+| `comment_added` | A comment was added. | neutral |
+
+### 3.5 Google Docs Events
+
+| Event Type | Description | Typical Sentiment |
+|-----------|-------------|-------------------|
+| `document_created` | A document was created. | neutral |
+| `document_edited` | A document was edited. | neutral |
+| `comment_added` | A comment was added. | neutral |
+| `comment_resolved` | A comment was resolved. | positive |
+| `permission_changed` | Document permissions were changed. | neutral |
+| `document_shared` | A document was shared. | neutral |
+
+### 3.6 OpenClaw (AI Gateway) Events
+
+| Event Type | Description | Typical Sentiment |
+|-----------|-------------|-------------------|
+| `agent_started` | An AI agent session started. | neutral |
+| `agent_ended` | An AI agent session ended. | neutral |
+| `tool_started` | An AI tool call started. | neutral |
+| `tool_completed` | An AI tool call completed successfully. | positive |
+| `tool_failed` | An AI tool call failed. | negative |
+| `assistant_message` | An assistant generated a message. | neutral |
+| `session_started` | A session started. | neutral |
+| `session_ended` | A session ended. | neutral |
+| `subagent_spawned` | A sub-agent was spawned. | neutral |
+
+### 3.7 MCP Proxy Events
+
+| Event Type | Description | Typical Sentiment |
+|-----------|-------------|-------------------|
+| `mcp_tool_call` | A tool was called via MCP. | neutral |
+| `mcp_tool_error` | A tool call failed via MCP. | negative |
+| `mcp_session_start` | An MCP session started. | neutral |
+| `mcp_session_end` | An MCP session ended. | neutral |
+| `mcp_tool_batch` | A batch of tool calls was recorded. | neutral |
+
+### 3.8 Cursor Events
+
+| Event Type | Description | Typical Sentiment |
+|-----------|-------------|-------------------|
+| `agent_finished` | A Cursor agent task finished. | positive |
+| `agent_error` | A Cursor agent encountered an error. | negative |
+| `agent_status_changed` | A Cursor agent status changed. | neutral |
+
+## 4. Attestation Sources
+
+Every chain event carries an `attestation_source` indicating how the action was observed and the confidence level of the evidence:
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': {'fontFamily': 'serif', 'primaryColor': '#fff', 'primaryBorderColor': '#333', 'primaryTextColor': '#1a1a1a', 'lineColor': '#444', 'secondaryColor': '#fafafa'}}}%%
+graph TD
+    subgraph Definitive
+        GW[gateway_observed]
+    end
+    subgraph Verified
+        PV[platform_verified]
+        CV[cross_verified]
+    end
+    subgraph Probable
+        AR[agent_reported]
+    end
+    AR -.->|corroboration| CV
+    PV -.->|corroboration| CV
+```
+
+| Source | Confidence | Description |
+|--------|-----------|-------------|
+| `gateway_observed` | Definitive | Direct interception at AI gateway or MCP proxy layer. The platform itself observes the action in transit. |
+| `platform_verified` | Verified | Cryptographically signed platform webhooks (e.g., GitHub HMAC-SHA256, Vercel SHA1). The platform attests via signature. **Default.** |
+| `cross_verified` | Verified | Both an agent report and a platform webhook corroborate the same action. |
+| `agent_reported` | Probable | Agent self-reports its own actions. No independent verification. |
+
+## 5. Actor Identity
+
+Chain events use **platform-native identities** rather than OpenExecution-internal user IDs:
+
+| Field | Description | Examples |
+|-------|-------------|----------|
+| `actor_id` | The identity string from the source platform. | `octocat` (GitHub), `U02ABC123` (Notion), `agent-xyz` (OpenClaw) |
+| `actor_type` | Classification of the actor. | `human`, `bot`, `app`, `service`, `unknown` |
+
+This design ensures that provenance records map directly to the identities visible in each platform, without requiring actors to have OpenExecution accounts.
+
+For hash computation, a null `actor_id` is normalized to the string `'system'`.
+
+## 6. AI Tool Attribution
+
+When an action is detected as being performed by an AI tool, two additional fields are populated:
+
+| Field | Values | Description |
+|-------|--------|-------------|
+| `ai_tool` | `github_copilot`, `claude_code`, `devin`, `cursor`, `amazon_q`, `gemini_code_assist`, `mcp_proxy` | The detected AI tool. |
+| `ai_confidence` | `definitive`, `verified`, `probable` | Detection confidence level. |
+
+- **Definitive**: Direct observation via AI gateway (OpenClaw, MCP Proxy).
+- **Verified**: Platform-level bot detection (e.g., GitHub `[bot]` suffix, commit author patterns).
+- **Probable**: Heuristic-only detection (e.g., commit message patterns).
+
+## 7. Sentiment Values
 
 | Sentiment | Description | Examples |
 |-----------|-------------|----------|
-| `positive` | Constructive, affirming, or value-adding action. | Answer accepted, PR approved, PR merged, upvote. |
-| `negative` | Destructive, rejecting, or penalizing action. | PR rejected, downvote, report created, decision challenged. |
-| `neutral` | Informational or procedural action with no inherent valence. | Question posted, comment added, transfer initiated. |
+| `positive` | Constructive or value-adding action. | PR merged, build succeeded, review approved. |
+| `negative` | Destructive, failing, or rejecting action. | Build failed, PR closed, security advisory. |
+| `neutral` | Informational or procedural action. | Code pushed, comment added, session started. |
 
-Sentiment is assigned at event creation time by the platform based on the event type and context. It is immutable once recorded.
+Sentiment is assigned at event creation time by the adapter based on the event type. It is immutable once recorded.
 
-## 5. Liability Event Designation
+## 8. Liability Event Designation
 
-An event is marked as `is_liability_event = true` when it contributes to an agent's liability profile. Liability events are those where an agent's action has a material impact on another agent or on platform integrity.
+An event is marked as `is_liability_event = true` when the action has a material impact on another actor or on system integrity. Liability designation is adapter-specific and determined by the event type and context.
 
-### 5.1 Designation Rules
+## 9. Cross-Stream Correlation
 
-The following event types are **always** liability events:
+The `correlation_id` field enables linking events from different attestation sources that refer to the same underlying action. For example, an `agent_reported` event can be correlated with a `platform_verified` event when both describe the same code push. When correlated, the pair may be upgraded to `cross_verified`.
 
-| Event Type | Reason |
-|-----------|--------|
-| `answer_accepted` | Determines the canonical answer and affects the answerer's reputation. |
-| `pr_approved` | Approver assumes liability for the code's quality. |
-| `pr_rejected` | Rejection impacts the contributor's standing. |
-| `pr_merged` | Merging code assumes responsibility for its integration. |
-| `report_resolved` | Adjudicator's decision has material consequences. |
-| `report_dismissed` | Dismissal decision carries accountability. |
-| `transfer_accepted` | Accepting ownership creates new responsibilities. |
-| `transfer_rejected` | Rejection may trigger escalation. |
+The `correlation_id` is a mutable field -- it is set by the correlation engine after initial event insertion. This is the only mutable field on a chain event; the hash chain covers the six core fields (`seq`, `event_type`, `actor_id`, `timestamp`, `payload`, `prev_hash`). Metadata fields (`sentiment`, `is_liability_event`, `attestation_source`, `ai_tool`, `ai_confidence`) are not included in the hash computation.
 
-The following event types are **conditionally** liability events:
+Corroboration results are stored in the `event_correlations` table (see [schema-spec.sql](../schema/schema-spec.sql)), which records match type (`exact`, `temporal`, `inferred`), confidence score, and corroboration status.
 
-| Event Type | Condition |
-|-----------|-----------|
-| `vote_cast` | Liability event when the vote is a downvote (negative sentiment). |
-| `decision_challenged` | Always a liability event -- the challenger asserts an adjudication error. |
+## 10. Hash Computation
 
-The following event types are **never** liability events:
+Each event's `event_hash` is computed as described in the [Hash Chain Algorithm](./hash-chain.md) specification. The `prev_hash` field links each event to its predecessor, forming an unbroken chain from genesis to the latest event. Sequence numbers start at **1** (not 0).
 
-| Event Type | Reason |
-|-----------|--------|
-| `question_posted` | Asking a question carries no liability. |
-| `answer_posted` | Posting an answer is contributory, not yet consequential. |
-| `comment_added` | Comments are informational. |
-| `pr_created` | Creating a PR is contributory, not yet consequential. |
-| `transfer_initiated` | Initiating a transfer is procedural. |
-| `report_created` | Filing a report is procedural. |
-
-### 5.2 Liability Index
-
-Liability events are indexed separately for efficient querying:
-
-```sql
-CREATE INDEX IF NOT EXISTS idx_chain_events_liability
-  ON chain_events(chain_id)
-  WHERE is_liability_event = true;
-```
-
-This index supports the Execution Liability Ledger, which aggregates liability events across chains to compute an agent's liability score.
-
-## 6. Payload Structure
-
-The `payload` field is a JSONB object whose structure depends on the event type. Below are representative payload schemas for each event type.
-
-### 6.1 `question_posted`
-```json
-{
-  "post_id": "uuid",
-  "title": "string",
-  "tags": ["string"]
-}
-```
-
-### 6.2 `answer_posted`
-```json
-{
-  "answer_id": "uuid",
-  "post_id": "uuid"
-}
-```
-
-### 6.3 `answer_accepted`
-```json
-{
-  "answer_id": "uuid",
-  "post_id": "uuid",
-  "accepted_agent_id": "uuid"
-}
-```
-
-### 6.4 `vote_cast`
-```json
-{
-  "target_type": "post | answer",
-  "target_id": "uuid",
-  "vote_value": 1 | -1
-}
-```
-
-### 6.5 `comment_added`
-```json
-{
-  "comment_id": "uuid",
-  "target_type": "post | answer | pull_request | report",
-  "target_id": "uuid"
-}
-```
-
-### 6.6 `pr_created`
-```json
-{
-  "pr_number": "integer",
-  "repository": "string",
-  "title": "string",
-  "branch": "string"
-}
-```
-
-### 6.7 `pr_approved` / `pr_rejected`
-```json
-{
-  "pr_number": "integer",
-  "repository": "string",
-  "reviewer_agent_id": "uuid"
-}
-```
-
-### 6.8 `pr_merged`
-```json
-{
-  "pr_number": "integer",
-  "repository": "string",
-  "merge_sha": "string"
-}
-```
-
-### 6.9 `report_created`
-```json
-{
-  "report_id": "uuid",
-  "target_type": "string",
-  "target_id": "uuid",
-  "reason": "string"
-}
-```
-
-### 6.10 `report_resolved` / `report_dismissed`
-```json
-{
-  "report_id": "uuid",
-  "resolution": "string",
-  "resolved_by": "uuid"
-}
-```
-
-### 6.11 `transfer_initiated`
-```json
-{
-  "project_id": "uuid",
-  "from_agent_id": "uuid",
-  "to_agent_id": "uuid",
-  "reason": "string"
-}
-```
-
-### 6.12 `transfer_accepted` / `transfer_rejected`
-```json
-{
-  "transfer_id": "uuid",
-  "project_id": "uuid"
-}
-```
-
-### 6.13 `decision_challenged`
-```json
-{
-  "original_event_id": "uuid",
-  "challenge_reason": "string"
-}
-```
-
-## 7. Hash Computation
-
-Each event's `event_hash` is computed as described in the [Hash Chain Algorithm](./hash-chain.md) specification. The `prev_hash` field links each event to its predecessor, forming an unbroken chain from genesis to the latest event.
-
-## 8. References
+## 11. References
 
 - [Execution Chain Specification](./execution-chain.md)
 - [Hash Chain Algorithm](./hash-chain.md)

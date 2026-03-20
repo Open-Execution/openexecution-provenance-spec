@@ -17,7 +17,7 @@ export type PublicKeyInput = string | Buffer | KeyObject;
 export interface ChainEvent {
   seq: number;
   event_type: string;
-  agent_id: string | null;
+  actor_id: string | null;
   created_at: string;
   payload: Record<string, unknown>;
   prev_hash: string;

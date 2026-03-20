@@ -31,7 +31,7 @@ Third-party implementations are encouraged to:
 - Build platform adapters that connect to the OpenExecution core engine
 - Embed provenance badges in their projects
 - Reference OpenExecution certificates in their documentation
-- Perform independent verification using Ed25519 public keys -- no platform trust required
+- Perform independent verification using published public keys -- no platform trust required
 
 Third-party implementations MUST NOT:
 
@@ -39,7 +39,7 @@ Third-party implementations MUST NOT:
 - Claim OpenExecution adjudication authority
 - Represent their liability determinations as OpenExecution rulings
 
-The cryptographic design (Ed25519 signatures, SHA-256 hash chains) ensures that
+The cryptographic design (asymmetric digital signatures, hash chains) ensures that
 certificate integrity can be verified independently of the platform. The platform
 never holds your proof -- verification requires only the public key.
 

@@ -377,7 +377,7 @@ class OpenExecutionVerifier:
             payload = {
                 "seq": seq,
                 "event_type": event["event_type"],
-                "agent_id": event.get("agent_id") or "system",
+                "actor_id": event.get("actor_id") or "system",
                 "timestamp": _normalize_timestamp(event["created_at"]),
                 "payload": event.get("payload", {}),
                 "prev_hash": event.get("prev_hash", genesis),

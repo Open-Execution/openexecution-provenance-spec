@@ -7,21 +7,21 @@ on:
     branches: [main]
 
 jobs:
-  sdk-js-test:
-    name: JS SDK Tests
+  sdk-js-check:
+    name: JS SDK Checks
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - name: Verify SDK syntax
-        run: node -c sdk/js/src/verify.js
+      - name: Verify SDK loads
+        run: node -e "require('./sdk/js/src/verify.js')"
       - name: Verify types exist
         run: test -f sdk/js/src/types.d.ts
 
-  sdk-python-test:
-    name: Python SDK Tests
+  sdk-python-check:
+    name: Python SDK Checks
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -55,5 +55,7 @@ jobs:
           --health-retries 5
     steps:
       - uses: actions/checkout@v4
+      - name: Enable uuid-ossp extension
+        run: PGPASSWORD=test_password psql -h localhost -U oe_test -d spec_test -c 'CREATE EXTENSION IF NOT EXISTS "uuid-ossp";'
       - name: Validate schema-spec.sql
         run: PGPASSWORD=test_password psql -h localhost -U oe_test -d spec_test -f schema/schema-spec.sql

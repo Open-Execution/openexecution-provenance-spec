@@ -6,12 +6,14 @@ OpenExecution Provenance uses a three-layer cryptographic accountability model. 
 
 For detailed algorithm compliance with international standards (BSI TR-02102, CRYPTREC, NIST, ANSSI, SOG-IS), see [CRYPTOGRAPHIC-COMPLIANCE.md](CRYPTOGRAPHIC-COMPLIANCE.md).
 
-### Core Primitives
+### Core Primitives (Defaults)
 
-| Layer | Algorithm | Standard | Purpose |
+The system supports pluggable algorithms (6 hash x 5 signature x 1 canonicalization = 30 combinations). The defaults are:
+
+| Layer | Default Algorithm | Standard | Purpose |
 |-------|-----------|----------|---------|
-| L2: Hash Chain | SHA-256 | FIPS 180-4 | Tamper-evident event linking |
-| L3: Signatures | Ed25519 | RFC 8032 / FIPS 186-5 | Certificate signing, non-repudiation |
+| L2: Hash Chain | SHA-256 (+ SHA-384/512, SHA3-256/384/512) | FIPS 180-4, FIPS 202 | Tamper-evident event linking |
+| L3: Signatures | Ed25519 (+ Ed448, ECDSA-P256/P384/P521) | RFC 8032, FIPS 186-5 | Certificate signing, non-repudiation |
 | Serialization | JCS | RFC 8785 | Deterministic JSON for hash consistency |
 
 ### Security Properties

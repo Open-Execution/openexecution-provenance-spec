@@ -397,7 +397,7 @@ class OpenExecutionVerifier {
       const eventData = {
         seq: event.seq,
         event_type: event.event_type,
-        agent_id: event.agent_id || 'system',
+        actor_id: event.actor_id || 'system',
         timestamp: new Date(event.created_at).toISOString(),
         payload: event.payload,
         prev_hash: event.prev_hash,

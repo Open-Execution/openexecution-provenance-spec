@@ -1,16 +1,16 @@
 # OpenExecution Provenance Certificate Specification
 
-**Version:** 1.0.0
+**Version:** 2.0.0
 **Status:** Active
-**Last Updated:** 2026-02-14
+**Last Updated:** 2026-03-20
 
 ## 1. Overview
 
-A **Provenance Certificate** is the culmination of the OpenExecution accountability stack -- a signed, self-contained attestation that constitutes court-ready evidence. It proves that a specific artifact was produced through a verified, tamper-evident execution chain, and it can be independently verified by anyone using only the platform's published Ed25519 public key.
+A **Provenance Certificate** is the culmination of the OpenExecution accountability stack -- a signed, self-contained attestation that constitutes court-ready evidence. It proves that a specific artifact was produced through a verified, tamper-evident execution chain, and it can be independently verified by anyone using only the platform's published public key.
 
-This is the key distinction from observability tools like LangSmith, LangFuse, or Helicone: those produce internal debug records that the operator can edit or delete. A Provenance Certificate is cryptographically signed with Ed25519 (L3 -- Independent Accountability), satisfying eIDAS "advanced electronic signature" requirements and China's Electronic Signature Law (Article 13). Platform logs lie. Cryptography doesn't.
+This is the key distinction from observability tools like LangSmith, LangFuse, or Helicone: those produce internal debug records that the operator can edit or delete. A Provenance Certificate is cryptographically signed with asymmetric keys (L3 -- Independent Accountability), satisfying eIDAS "advanced electronic signature" requirements and China's Electronic Signature Law (Article 13). Platform logs lie. Cryptography doesn't.
 
-Provenance certificates are issued automatically when an execution chain transitions from the `resolved` state to the `certified` state. Each certificate captures a summary of the chain's events, participants, and outcome, and is cryptographically signed to prevent forgery.
+Provenance certificates are issued automatically when an execution chain transitions from the `resolved` state to the `certified` state.
 
 ## 2. Certificate Structure
 
@@ -19,16 +19,24 @@ A provenance certificate is stored in the `provenance_certificates` table and co
 | Field | Type | Description |
 |-------|------|-------------|
 | `id` | UUID | Unique certificate identifier. |
-| `chain_id` | UUID | The execution chain this certificate attests to. |
-| `artifact_type` | VARCHAR(32) | The type of artifact being certified (e.g., `answer`, `pull_request`, `transfer`, `report_resolution`). |
-| `artifact_ref` | VARCHAR(256) | A reference identifier for the artifact (e.g., answer UUID, PR number). |
-| `artifact_title` | VARCHAR(512) | A human-readable title or description of the certified artifact. |
+| `chain_id` | UUID (UNIQUE) | The execution chain this certificate attests to. One certificate per chain. |
+| `user_id` | UUID | The user who owns the chain. |
+| `artifact_type` | VARCHAR(64) | The type of artifact being certified. |
+| `artifact_ref` | VARCHAR(512) | A reference identifier for the artifact. |
+| `artifact_title` | VARCHAR(500) | A human-readable title or description of the certified artifact. |
 | `certificate_data` | JSONB | The canonical certificate payload (see Section 3). |
-| `chain_hash` | VARCHAR(64) | SHA-256 hash of the execution chain's concatenated event hashes. Must match the chain's `chain_hash`. |
-| `certificate_signature` | VARCHAR(128) | Ed25519 signature of the canonical `certificate_data`. |
+| `chain_hash` | VARCHAR(128) | Hash of the execution chain's concatenated event hashes. |
+| `certificate_signature` | VARCHAR(8192) | Digital signature of the canonical `certificate_data`. |
+| `signature_algorithm` | VARCHAR(16) | The algorithm used to sign (e.g., `ed25519`, `ecdsa-p521`). |
+| `public_key_fingerprint` | VARCHAR(64) | Fingerprint of the public key used for signing, for key rotation tracking. |
+| `hash_algorithm` | VARCHAR(16) | The hash algorithm used for the chain (e.g., `sha256`). |
+| `canonicalization` | VARCHAR(16) | The canonicalization method (always `jcs`). |
 | `status` | VARCHAR(20) | Certificate lifecycle status: `active`, `revoked`, or `superseded`. |
-| `created_at` | TIMESTAMPTZ | When the certificate was issued. |
-| `updated_at` | TIMESTAMPTZ | Last modification timestamp. |
+| `revocation_reason` | TEXT | Reason for revocation (null unless revoked). |
+| `revoked_at` | TIMESTAMPTZ | When the certificate was revoked (null unless revoked). |
+| `superseded_by` | UUID | The certificate that supersedes this one (null unless superseded). |
+| `issued_at` | TIMESTAMPTZ | When the certificate was issued. |
+| `created_at` | TIMESTAMPTZ | Record creation timestamp. |
 
 ## 3. Certificate Data Structure
 
@@ -38,28 +46,20 @@ The `certificate_data` field is a JSON object with the following canonical struc
 {
   "version": "1.0",
   "chain_id": "uuid",
-  "chain_type": "question_resolution | project_build | code_review | ownership_transfer | dispute_resolution",
-  "origin_type": "post | project | pull_request | report",
+  "chain_type": "resource_audit | manual | incident_response | compliance_report",
+  "origin_type": "github | vercel | figma | notion | google_docs | openclaw | cursor | mcp_proxy | manual",
   "origin_id": "string",
-  "artifact_type": "answer | pull_request | transfer | report_resolution",
+  "artifact_type": "string",
   "artifact_ref": "string",
   "artifact_title": "string",
-  "event_count": 5,
-  "participant_ids": ["uuid", "uuid"],
+  "event_count": 42,
+  "chain_hash": "hex-string",
   "events": [
     {
-      "seq": 0,
-      "event_type": "question_posted",
-      "agent_id": "uuid",
-      "agent_name": "string",
-      "sentiment": "neutral"
-    },
-    {
       "seq": 1,
-      "event_type": "answer_posted",
-      "agent_id": "uuid",
-      "agent_name": "string",
-      "sentiment": "positive"
+      "event_type": "code_pushed",
+      "actor_id": "octocat",
+      "sentiment": "neutral"
     }
   ],
   "chain_created_at": "ISO-8601 timestamp",
@@ -68,67 +68,50 @@ The `certificate_data` field is a JSON object with the following canonical struc
 }
 ```
 
-### 3.1 Field Descriptions
+### 3.1 Event Summary Objects
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `version` | string | Certificate data format version. Always `"1.0"` for this specification. |
-| `chain_id` | string (UUID) | The execution chain ID this certificate attests to. |
-| `chain_type` | string | The type of execution chain. |
-| `origin_type` | string | The type of entity that originated the chain. |
-| `origin_id` | string | The identifier of the originating entity. |
-| `artifact_type` | string | The type of artifact being certified. |
-| `artifact_ref` | string | A reference identifier for the artifact. |
-| `artifact_title` | string | A human-readable title for the certified artifact. |
-| `event_count` | integer | Total number of events in the chain. |
-| `participant_ids` | string[] | Array of agent UUIDs who participated in the chain. |
-| `events` | object[] | Summary array of chain events (see Section 3.2). |
-| `chain_created_at` | string | ISO-8601 timestamp of when the chain was created. |
-| `chain_resolved_at` | string | ISO-8601 timestamp of when the chain was resolved. |
-| `issued_at` | string | ISO-8601 timestamp of when the certificate was issued. |
-
-### 3.2 Event Summary Objects
-
-Each entry in the `events` array is a summary of a chain event, containing only the fields necessary for certificate display and verification context:
+Each entry in the `events` array is a summary of a chain event:
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `seq` | integer | Event sequence number within the chain. |
 | `event_type` | string | The type of event. |
-| `agent_id` | string or null | The agent who performed the action. Null for system events. |
-| `agent_name` | string or null | The display name of the agent at the time of certification. |
+| `actor_id` | string or null | The platform-native identity who performed the action. |
 | `sentiment` | string | The sentiment classification: `positive`, `negative`, or `neutral`. |
 
 ## 4. Certificate Signature
 
-The `certificate_signature` field contains an **Ed25519 digital signature** (RFC 8032) computed over the canonical JSON representation of the `certificate_data` field. Ed25519 provides asymmetric signing: the platform signs with its private key, and anyone verifies with the published public key -- no platform cooperation or shared secrets required.
+The `certificate_signature` field contains a digital signature computed over the JCS-canonicalized representation of the `certificate_data` field.
 
-### 4.1 Canonical JSON
+### 4.1 JCS Canonicalization (RFC 8785)
 
-Canonical JSON is produced by serializing the `certificate_data` object with all keys sorted alphabetically at every nesting level. This ensures that the same logical data always produces the same byte sequence, regardless of the original key ordering.
+The certificate data is serialized using JCS canonicalization -- recursive key sorting at every nesting level -- to produce a deterministic byte sequence:
 
 ```
-canonical_json = JSON.stringify(certificate_data, Object.keys(certificate_data).sort())
+canonical = JCS(certificate_data)
 ```
+
+This ensures that the same logical data always produces the same byte sequence, regardless of the original key ordering. See [hash-chain.md](./hash-chain.md) Section 3.2 for the full JCS algorithm.
 
 ### 4.2 Signature Computation
 
 ```
-signature = Ed25519.sign(private_key, canonical_json)
+signature = Sign(private_key, canonical)
 ```
 
 Where:
-- `private_key` is the platform's Ed25519 private signing key (server-side secret).
-- `canonical_json` is the canonical JSON representation of `certificate_data`.
-- The output is a lowercase hexadecimal string (128 characters for Ed25519).
+- `private_key` is the platform's signing key (server-side secret).
+- `canonical` is the JCS representation of `certificate_data`.
+- `Sign` is the chain's configured signature algorithm (Ed25519 by default).
+- The output is a hex-encoded string. Length varies by algorithm.
 
 Verification uses only the public key:
 
 ```
-valid = Ed25519.verify(public_key, canonical_json, signature)
+valid = Verify(public_key, canonical, signature)
 ```
 
-The platform's Ed25519 public key is available at:
+The platform's public key is available at:
 
 ```
 GET /api/v1/provenance/public-key
@@ -136,84 +119,85 @@ GET /api/v1/provenance/public-key
 
 ### 4.3 Signature Prefix Convention
 
-All OpenExecution provenance signatures use the `oe_sig_` prefix convention when displayed or transmitted externally. The stored `certificate_signature` value is the raw hex digest without the prefix. External representations prepend the prefix for namespace clarity:
+All OpenExecution provenance signatures use the `oe_sig_` prefix convention when displayed externally:
 
 ```
 External format: oe_sig_<hex_digest>
 Stored format:   <hex_digest>
 ```
 
-### 4.4 Key Management and Independent Custody
+### 4.4 Key Management
 
-The Ed25519 signing key is:
-- An asymmetric private key, never exposed to clients or included in certificates.
-- The corresponding public key is published at the well-known API endpoint and included as a fingerprint in every certificate.
-- Rotated periodically. Key rotation produces `superseded` certificates for the old key and reissued certificates under the new key.
-- Stored securely using environment variables, a secrets management service, or HSM-backed infrastructure.
-
-**Independent key custody**: The platform never holds your proof. Key custody can be customer-controlled or HSM-backed, requiring zero platform trust for verification.
+- The signing key is asymmetric and never exposed to clients.
+- The public key is published at the well-known API endpoint.
+- The `public_key_fingerprint` in each certificate enables key rotation tracking.
+- Rotated keys produce `superseded` certificates for the old key.
+- Key custody can be customer-controlled or HSM-backed, requiring zero platform trust.
 
 ## 5. Certificate Status Lifecycle
 
-Certificates progress through the following states:
-
-```
-active --> revoked
-  |
-  v
-superseded
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': {'fontFamily': 'serif', 'primaryColor': '#fff', 'primaryBorderColor': '#333', 'primaryTextColor': '#1a1a1a', 'lineColor': '#444', 'secondaryColor': '#fafafa'}}}%%
+stateDiagram-v2
+    [*] --> active
+    active --> revoked
+    active --> superseded
 ```
 
 | Status | Description |
 |--------|-------------|
-| `active` | The certificate is valid and can be used for verification. This is the initial state. |
-| `revoked` | The certificate has been revoked, typically due to a successful dispute, policy violation, or fraud detection. Revoked certificates fail verification. |
-| `superseded` | The certificate has been replaced by a newer certificate, typically due to signing key rotation or chain amendment. The superseding certificate ID should be recorded. |
+| `active` | The certificate is valid and can be used for verification. |
+| `revoked` | The certificate has been revoked. `revocation_reason` and `revoked_at` are set. |
+| `superseded` | The certificate has been replaced by a newer certificate. `superseded_by` references the new certificate. |
 
 ### 5.1 Status Transitions
 
-- **active -> revoked**: Triggered by adjudication outcome, policy enforcement, or manual revocation by an authorized administrator.
-- **active -> superseded**: Triggered by signing key rotation or certificate reissuance. The new certificate references the original chain.
+- **active -> revoked**: Triggered by adjudication, policy enforcement, or manual revocation. The `revocation_reason` field records the cause.
+- **active -> superseded**: Triggered by signing key rotation or certificate reissuance. `superseded_by` points to the new certificate.
 
-Once a certificate is `revoked` or `superseded`, it cannot return to the `active` state. A new certificate must be issued if recertification is required.
+Once revoked or superseded, a certificate cannot return to `active`.
 
 ## 6. Database Schema
 
 ```sql
-CREATE TABLE IF NOT EXISTS provenance_certificates (
+CREATE TABLE provenance_certificates (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  chain_id UUID NOT NULL REFERENCES execution_chains(id) ON DELETE CASCADE,
-  artifact_type VARCHAR(32) NOT NULL,
-  artifact_ref VARCHAR(256) NOT NULL,
-  artifact_title VARCHAR(512),
-  certificate_data JSONB NOT NULL,
-  chain_hash VARCHAR(64) NOT NULL,
-  certificate_signature VARCHAR(128) NOT NULL,
-  status VARCHAR(20) NOT NULL DEFAULT 'active' CHECK (status IN (
-    'active', 'revoked', 'superseded'
-  )),
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  chain_id UUID NOT NULL REFERENCES execution_chains(id) UNIQUE,
+  user_id UUID NOT NULL,    -- references users(id) in platform schema
+  artifact_type VARCHAR(64) NOT NULL,
+  artifact_ref VARCHAR(512) NOT NULL,
+  artifact_title VARCHAR(500),
+  certificate_data JSONB,
+  chain_hash VARCHAR(128),
+  certificate_signature VARCHAR(8192),
+  signature_algorithm VARCHAR(16) NOT NULL DEFAULT 'ed25519',
+  public_key_fingerprint VARCHAR(64),
+  hash_algorithm VARCHAR(16) NOT NULL DEFAULT 'sha256',
+  canonicalization VARCHAR(16) NOT NULL DEFAULT 'jcs',
+  status VARCHAR(20) DEFAULT 'active' CHECK (status IN ('active', 'revoked', 'superseded')),
+  revocation_reason TEXT,
+  revoked_at TIMESTAMPTZ,
+  superseded_by UUID REFERENCES provenance_certificates(id),
+  issued_at TIMESTAMPTZ DEFAULT NOW(),
+  created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_prov_certs_chain ON provenance_certificates(chain_id);
-CREATE INDEX IF NOT EXISTS idx_prov_certs_artifact ON provenance_certificates(artifact_type, artifact_ref);
-CREATE INDEX IF NOT EXISTS idx_prov_certs_status ON provenance_certificates(status);
-CREATE INDEX IF NOT EXISTS idx_prov_certs_created ON provenance_certificates(created_at DESC);
+CREATE INDEX idx_prov_certs_chain ON provenance_certificates(chain_id);
+CREATE INDEX idx_prov_certs_user ON provenance_certificates(user_id);
+CREATE INDEX idx_prov_certs_artifact ON provenance_certificates(artifact_type, artifact_ref);
+CREATE INDEX idx_prov_certs_status ON provenance_certificates(status);
 ```
 
 ## 7. Issuance Process
 
-The certificate issuance process is as follows:
-
-1. An execution chain transitions to the `resolved` state (all terminal events recorded, chain hash computed).
-2. The provenance certification service fetches the chain, its events, and participant details.
+1. An execution chain transitions to the `resolved` state (chain hash computed).
+2. The provenance certification service fetches the chain, its events, and metadata.
 3. The service constructs the `certificate_data` JSON object.
-4. The service computes the canonical JSON representation.
-5. The service computes the Ed25519 signature using the platform's private signing key.
-6. The service inserts the provenance certificate record with status `active`.
+4. The service computes the JCS canonical representation.
+5. The service computes the digital signature using the platform's private signing key and the chain's `signature_algorithm`.
+6. The service inserts the provenance certificate record with status `active`, recording the `public_key_fingerprint`.
 7. The execution chain status is updated to `certified` with the `certified_at` timestamp.
-8. The certificate is now independently verifiable by any third party using only the published public key.
+8. The certificate is now independently verifiable by any third party.
 
 Only the official OpenExecution platform may issue provenance certificates. See [NOTICE.md](../NOTICE.md) for issuance rights.
 

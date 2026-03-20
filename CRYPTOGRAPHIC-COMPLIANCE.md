@@ -69,6 +69,7 @@ The BSI TR-02102-1 provides recommendations for cryptographic algorithms and key
 | **AES-256** (GCM mode) | Recommended | 3.2, 3.5 | 256-bit key length exceeds minimum requirement of 128 bits; GCM is an approved mode of operation |
 | **HMAC-SHA256** | Recommended | 4.4 | Recommended for message authentication |
 | **scrypt** | Acceptable | 4.5 | Recognized memory-hard KDF |
+| **bcrypt** | Not listed | N/A | Password hashing; not in BSI scope (non-standard KDF) |
 
 ### Post-Quantum Readiness
 
@@ -127,7 +128,7 @@ The CRYPTREC Ciphers List classifies algorithms into three categories:
 | **ECDSA P-521** (secp521r1) | FIPS 186-4/186-5 (DSS) | Approved | NIST prime curve; approved for digital signatures |
 | **AES-256-GCM** | FIPS 197 + SP 800-38D | Approved | AES (FIPS 197) in GCM mode (SP 800-38D) |
 | **HMAC-SHA256** | FIPS 198-1 | Approved | Keyed-Hash Message Authentication Code |
-| **scrypt** | SP 800-132 (category) | Referenced | Memory-hard KDF; RFC 7914 |
+| **scrypt** | RFC 7914 | Not NIST-specified | Memory-hard KDF for key derivation |
 
 ### CAVP Readiness
 
@@ -293,7 +294,7 @@ All 30 combinations are valid. The table above shows representative pairings; an
 - CRYPTREC: e-Government Recommended Ciphers List, May 2024
 - ANSSI RGS: Referentiel General de Securite, Annexe B1
 - SOG-IS: Agreed Cryptographic Mechanisms, v1.3
-- Li, A. & Li, C. (2026). AEGIS: Agent Execution Governance and Integrity Standard. SSRN Working Paper.
+- Li, A. (2026). AEGIS: Agent Execution Governance and Integrity Standard -- A Survey and Reference Architecture for AI Agent Action Accountability. Zenodo. doi:10.5281/zenodo.18955103
 
 ---
 
