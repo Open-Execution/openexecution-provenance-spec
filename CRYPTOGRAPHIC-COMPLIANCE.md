@@ -11,7 +11,7 @@ This document declares the cryptographic algorithms used by the OpenExecution Pr
 
 ## Cryptographic Primitives Summary
 
-The OpenExecution Provenance system implements the **Minimal Verifiable Loop (MVL)** architecture defined in the AEGIS paper (Li & Li, 2026, Section 6.5). The MVL consists of exactly three cryptographic roles:
+The OpenExecution Provenance system implements the **Minimal Verifiable Loop (MVL)** architecture defined in the AEGIS (Agent Execution Governance and Integrity Standard) paper (Li, 2026, Section 6.5). The MVL consists of exactly three cryptographic roles:
 
 | Role | Algorithm | Standard | Security Level | Purpose |
 |------|-----------|----------|----------------|---------|
