@@ -230,33 +230,37 @@ The OpenExecution provenance system is domain-agnostic by design. The core engin
 | Adapter | Status | Attestation | Mechanism |
 |---------|--------|-------------|-----------|
 | **GitHub** | LIVE | `platform_verified` | Webhook (HMAC-SHA256) + bot detection |
-| **Vercel** | LIVE | `platform_verified` | Webhook (SHA1 signature) |
-| **Figma** | LIVE | `platform_verified` | Webhook (HMAC-SHA256) |
-| **Google Docs** | LIVE | `platform_verified` | Webhook (token verification) |
-| **Notion** | LIVE | `platform_verified` | Webhook (signature verification) |
-| **Cursor** | LIVE | `platform_verified` | Webhook (event reporting) |
 | **OpenClaw** | LIVE | `gateway_observed` | AI gateway interception (definitive) |
-| **MCP Proxy** | LIVE | `gateway_observed` | Direct tool-call interception (definitive) |
+| **Vercel** | PLANNED | `platform_verified` | Webhook (SHA1 signature) |
+| **Figma** | PLANNED | `platform_verified` | Webhook (HMAC-SHA256) |
+| **Google Docs** | PLANNED | `platform_verified` | Webhook (token verification) |
+| **Notion** | PLANNED | `platform_verified` | Webhook (signature verification) |
+| **Cursor** | PLANNED | `platform_verified` | Webhook (event reporting) |
+| **MCP Proxy** | PLANNED | `gateway_observed` | Direct tool-call interception (definitive) |
 
 ```mermaid
 %%{init: {'theme': 'base', 'themeVariables': {'fontFamily': 'serif', 'primaryColor': '#fff', 'primaryBorderColor': '#333', 'primaryTextColor': '#1a1a1a', 'lineColor': '#444', 'secondaryColor': '#fafafa'}}}%%
 graph LR
-    subgraph Adapters
+    subgraph Live["Live Adapters"]
         GH[GitHub]
+        OC[OpenClaw]
+    end
+    subgraph Planned["Planned Adapters"]
         VC[Vercel]
         FG[Figma]
         GD[Google Docs]
         NT[Notion]
         CR[Cursor]
-        OC[OpenClaw]
         MC[MCP Proxy]
     end
     subgraph Core["Core Engine"]
         EV[Event Recording] --> HC[Hash Chain]
         HC --> PC[Provenance Certificate]
     end
-    GH & VC & FG & GD & NT & CR -->|platform_verified| EV
-    OC & MC -->|gateway_observed| EV
+    GH -->|platform_verified| EV
+    OC -->|gateway_observed| EV
+    VC & FG & GD & NT & CR -.->|platform_verified| EV
+    MC -.->|gateway_observed| EV
 ```
 
 Any new platform adapter can be built in 1-2 days. OpenExecution provenance follows agent actions across any platform where agents operate.
