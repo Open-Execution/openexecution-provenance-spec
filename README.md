@@ -8,6 +8,15 @@ OpenExecution Provenance is the behavioral ledger for autonomous agents: cryptog
 
 > **LangSmith tells the operator what happened. OpenExecution tells the court what happened.**
 
+## Research Foundation
+
+The design of this specification is described in the following papers:
+
+| Paper | Contribution | DOI |
+|-------|-------------|-----|
+| **AEGIS** — Agent Execution Governance and Integrity Standard | Threat model (T1–T8), evaluation dimensions (D1–D7), three-layer architecture design | [10.5281/zenodo.18955103](https://doi.org/10.5281/zenodo.18955103) |
+| **LLM Exposure Monitoring** — Platform Openness and Recording Depth | Empirical basis for attestation source model (gateway / platform / agent / cross-verified) | [10.5281/zenodo.19112060](https://doi.org/10.5281/zenodo.19112060) |
+
 ## Why This Matters
 
 AI agents are shipping code, approving pull requests, resolving disputes, and transferring ownership -- with no independent record of what they did or why. Existing observability tools (LangSmith, LangFuse, Helicone) are internal debug tools: plain database records that the operator can edit or delete at will. They answer to the operator, not to the affected party.
