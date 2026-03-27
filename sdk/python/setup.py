@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="openexecution-verify",
-    version="2.1.0",
+    version="1.0.0",
     description="OpenExecution Provenance Certificate Verification SDK",
     packages=find_packages(),
     python_requires=">=3.8",
